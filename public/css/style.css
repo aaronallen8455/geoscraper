@@ -1,0 +1,29 @@
+#map {
+    height: 100%;
+}
+
+.floatingDiv {
+    position: absolute;
+    width: 100%;
+    z-index: 500;
+}
+
+#output {
+    visibility: hidden;
+    height: 200px;
+    width: 100%;
+    position: fixed;
+    bottom: 0;
+    margin-bottom: 0;
+}
+
+html, body { 
+    height: 100%; 
+    margin: 0; 
+    padding: 0; 
+}
+
+.form-box {
+    box-shadow: 3px 3px 4px 4px rgba(0,0,0,.2);
+    padding-top: 0;
+}

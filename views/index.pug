@@ -1,0 +1,38 @@
+doctype html
+html
+  head
+    title GeoScraper
+    link(rel='stylesheet', href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css')
+    link(rel='stylesheet', href='/css/style.css')
+  body
+    div.floatingDiv
+      div.container
+        div.row
+          div.col-md-offset-2.col-md-7
+            // the form
+            div.well.form-box
+              h3.text-center WutzGood - GeoScraper
+              // query the google api
+              input#lookupInput.form-control(type='text' placeholder='Enter a Location...')
+              br
+              button#lookupButton.btn.btn-default.btn-block Lookup
+              br
+              // send to DB
+              button#submitButton.btn.btn-primary.btn-block(disabled) Submit to Database
+      
+    // the google map
+    div#map
+    // the output modal
+    div#outputModal.modal(tabindex='-1' role='dialog' aria-labelledby='formModalLabel')
+      div.modal-content
+        div.modal-header
+          h4.modal-title Results
+        div#outputModalContent.modal-body
+        div.modal-footer
+          button.btn.btn-default(type='button' data-dismiss='modal') Close
+            
+    script(src='https://code.jquery.com/jquery-3.2.1.min.js')
+    script(src='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js')
+    script(src='https://maps.googleapis.com/maps/api/js?key=AIzaSyAXF6z1NT5Dfci6kGmahPyxtsVsQFlOLnc&libraries=places')
+    script(src='/js/main.js')
+    

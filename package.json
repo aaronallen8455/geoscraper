@@ -1,0 +1,17 @@
+{
+  "name": "geoscraper",
+  "version": "1.0.0",
+  "description": "A tool for populating the database with venue info from Google Places API.",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Aaron Allen",
+  "license": "ISC",
+  "dependencies": {
+    "express": "*",
+    "pg": "*",
+    "pug": "^2.0.0-rc.1",
+    "body-parser": "*"
+  }
+}
