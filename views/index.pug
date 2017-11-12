@@ -15,7 +15,10 @@ html
               // query the google api
               input#lookupInput.form-control(type='text' placeholder='Enter a Location...')
               br
-              button#lookupButton.btn.btn-default.btn-block Lookup
+              div.row
+                button#lookupButton.btn.btn-default.col-sm-4 Lookup
+                button#expandButton.btn.btn-warning.col-sm-4 Expand
+                button#clearButton.btn.btn-danger.col-sm-4 Clear
               br
               // send to DB
               button#submitButton.btn.btn-primary.btn-block(disabled) Submit to Database

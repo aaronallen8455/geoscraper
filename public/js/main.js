@@ -15,7 +15,8 @@ var VENUE_TYPES = ['restaurant','bar','cafe','night_club','casino','stadium','zo
 var lookupButton,
     lookupInput,  
     submitButton,
-    venueData;
+    expandButton,
+    clearButton;
 
 // a dictionary of venue objects keyed by google 'place_id'
 var venues = {};
@@ -47,25 +48,33 @@ $(function() {
     
     lookupButton = $('#lookupButton'),
     lookupInput  = $('#lookupInput'),
-    submitButton = $('#submitButton'),
-    venueData    = $('#venueData');
+    expandButton = $('#expandButton'),
+    clearButton = $('#clearButton'),
+    submitButton = $('#submitButton');
     
     // attach handler for the lookup button
     lookupButton.click(function (e) {
         venues = {}; // should accumulate searches instead?
-        venueData.val('');
         submitButton.get(0).disabled = true;
         lookupButton.get(0).disabled = true;
-        var center = getLatLong(lookupInput.val());
-        
-        initMap(center);
-        performSearch(center);
-        // init the search bounding box
-        initSearchBox(center.lat, center.lng);
+        getLatLong(lookupInput.val(), function(center) {
+            initMap(center);
+            performSearch(center);
+            // init the search bounding box
+            initSearchBox(center.lat, center.lng);
+        });
     });
     
+    expandButton.click(function(e) {
+        expandSearch();
+    });
+    
+    clearButton.click(function(e) {
+        clearVenues();
+    })
     
     submitButton.click(function (e) {
+        // send data to server
         var data = JSON.stringify(venues);
         
         $.ajax({
@@ -80,7 +89,6 @@ $(function() {
         function success(result) {
             $('#outputModalContent').text(JSON.stringify(result));
             $('#outputModal').modal();
-            console.log(result);
         }
     });
     
@@ -105,7 +113,7 @@ function initSearchBox(lat, long) {
 
 
 // find the lat and long of the location
-function getLatLong(location) {
+function getLatLong(location, callBack) {
     
     if (location) {
         var address = 'address='+location.replace(' ','+'),
@@ -138,19 +146,17 @@ function getLatLong(location) {
                 }
                 
                 center = data[i].geometry.location;
+                callBack(center);
             }
-       });
-        
-        return center;
+        });
     }
-    
-    return null;
 }
 
 
 // creates the map and initiates the search for each venue type
 function initMap(center) {
     if (center) {
+        
         map = new google.maps.Map(document.getElementById('map'), {
         	zoom: 14,
         	center: center,
@@ -313,6 +319,7 @@ function clearVenues() {
     clearMarkers();
     venues = {};
 }
+
 
 // delete all map markers
 function clearMarkers() {
