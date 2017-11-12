@@ -21,69 +21,78 @@ app.get('/', (req, res) => {
     res.render('index');
 });
 
+/* example search result
+
+ChIJf9rTVKa1RIYRGWjMsGuTEZw:
+   { name: 'The Jackalope',
+     location: { lat: 30.2672231, lng: -97.7389569 },
+     bounds:
+      { south: 30.2658741197085,
+        west: -97.74030588029149,
+        north: 30.2685720802915,
+        east: -97.73760791970847 },
+     types:
+      [ 'bar',
+        'restaurant',
+        'food',
+        'point_of_interest',
+        'establishment' ],
+     address: '404 East 6th, Austin',
+     state: 'Texas',
+     city: 'Austin' }
+*/
+
 // inserting new venues (ajax)
-app.put('/', (req, res) => {
-    
+app.put('/', async (req, res) => {
     var venueData,
         placeIds;
         
     if ((venueData = req.body) && (placeIds = Object.keys(venueData)) && placeIds.length) {
         
-        var query1 = 'INSERT INTO place_ids(place_id) VALUES($1)',
-            query2 = 'INSERT INTO venues(name, address, state) VALUES($1, $2, $3)';
-        //var query = 'BEGIN; INSERT INTO place_ids(place_id) VALUES($1); INSERT INTO venues(name, address, state) VALUES($2, $3, $4); COMMIT;';
-        //var query = 'INSERT INTO venues(name, address, state) VALUES($1, $2, $3)';
+        //var query1 = 'INSERT INTO place_ids(place_id) VALUES($1)',
+        //    query2 = "INSERT INTO venues(name, address, state, gps) VALUES($1, $2, $3, ST_GeomFromText($4, 4326))",
+        //    query3 = "INSERT INTO geofences(polygon) VALUES(ST_GeomFromText('POLYGON(($1,$2,$3,$4,$5))', 4326))";
         var failures = [],
             successes = [];
         
-        // recursive function to run the queries sequentially
-        function insertVenue(placeIndex) {
-            var placeId = placeIds[placeIndex];
-            
-            if (placeId === undefined) {
-                // we have reached the end
-                res.status(200);
-                res.json({successes: successes, failures: failures});
-                return;
-            }
-            
+        for (var placeId in venueData) {
             var venue = venueData[placeId];
 
             var params = [
-                venue.name,
-                venue.address,
-                venue.state
+                "'" + venue.name.replace(/'/g, "''") + "'",
+                "'" + venue.address.replace(/'/g, "''") + "'",
+                "'" + venue.state + "'",
+                "ST_GeomFromText('POINT(" + venue.location.lng + ' ' + venue.location.lat + " 0)', 4326)"
             ];
-
-            db.query(query1, [placeId], (err, result) => {
-                if (err) {
-                    failures.push(venueData[placeId]);
-                    //console.log(err);
-                    
-                    // run next query
-                    insertVenue(placeIndex + 1);
-                } else {
-                    // query1 succeeded, venue is not a duplicate.
-                    db.query(query2, params, (err, result) => {
-                        if (err) {
-                            failures.push(venueData[placeId]);
-                            //console.log(err);
-                        } else {
-                            successes.push(venueData[placeId]);
-                            
-                            
-                        }
-                        
-                        // run next query
-                        insertVenue(placeIndex + 1);
-                    });
-                }                
-            });
+            
+            var boundingBox = [
+                venue.bounds.west + ' ' + venue.bounds.north,
+                venue.bounds.east + ' ' + venue.bounds.north,
+                venue.bounds.east + ' ' + venue.bounds.south,
+                venue.bounds.west + ' ' + venue.bounds.south,
+                venue.bounds.west + ' ' + venue.bounds.north
+            ];
+            
+            var query = 
+                "BEGIN;" +
+                "INSERT INTO place_ids(place_id) VALUES('"+placeId+"');" +
+                "INSERT INTO venues(name, address, state, gps) VALUES("+params.join(',')+");" +
+                "COMMIT;"
+            
+            try {
+                // run the query
+                await db.query(query, []);
+                
+                successes.push(venue);
+            } catch (err) {
+                console.log(err);
+                failures.push(venue);
+            }
         }
         
-        // start the loop
-        insertVenue(0);
-        
+        res.status(200);
+        res.json({successes: successes, failures: failures});
+
     } else {
         res.sendStatus(500);
     }

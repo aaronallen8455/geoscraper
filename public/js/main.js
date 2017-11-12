@@ -3,10 +3,13 @@ var apikey = 'AIzaSyAXF6z1NT5Dfci6kGmahPyxtsVsQFlOLnc',
     mapsUrl = 'https://maps.googleapis.com/maps/api/geocode/json?',
     map,
     infoWindow,
-    service;
+    service,
+    markers = [];
 
 // constants
 var RADIUS = 1000;
+ // types of venues to search for
+var VENUE_TYPES = ['restaurant','bar','cafe','night_club','casino','stadium','zoo','amusement_park'];
 
 // Dom elements
 var lookupButton,
@@ -20,13 +23,32 @@ var venues = {};
 // holds info about the searched for location : state, city, country
 var locationMeta = {};
 
+// tracks the bounding corners of the most recent search so we can expand it
+var searchBounds = {
+    nw: { lat: 0, long: 0},
+    ne: { lat: 0, long: 0},
+    sw: { lat: 0, long: 0},
+    se: { lat: 0, long: 0},
+    segmentLength: 0,
+    size: 0 // number of segments per side
+};
+
+var ConversionHelper = {
+    metersToLat: function (meters) {
+        return meters / 111111;
+    },
+    metersToLong: function (meters, lat) {
+        return meters / (111111 * Math.cos(lat));
+    }
+}
+
 // init
 $(function() {
     
-    lookupButton  = $('#lookupButton'),
-    lookupInput   = $('#lookupInput'),
-    submitButton  = $('#submitButton'),
-    venueData     = $('#venueData');
+    lookupButton = $('#lookupButton'),
+    lookupInput  = $('#lookupInput'),
+    submitButton = $('#submitButton'),
+    venueData    = $('#venueData');
     
     // attach handler for the lookup button
     lookupButton.click(function (e) {
@@ -34,7 +56,12 @@ $(function() {
         venueData.val('');
         submitButton.get(0).disabled = true;
         lookupButton.get(0).disabled = true;
-        getLatLong(lookupInput.val());
+        var center = getLatLong(lookupInput.val());
+        
+        initMap(center);
+        performSearch(center);
+        // init the search bounding box
+        initSearchBox(center.lat, center.lng);
     });
     
     
@@ -42,12 +69,12 @@ $(function() {
         var data = JSON.stringify(venues);
         
         $.ajax({
-            dataType: "json",
+            dataType:    "json",
             contentType: "application/json; charset=utf-8",
-            type: "PUT",
-            url: '/',
-            data: data,
-            success: success
+            type:        "PUT",
+            url:         '/',
+            data:        data,
+            success:     success
         });
         
         function success(result) {
@@ -61,22 +88,35 @@ $(function() {
 });
 
 
+// set the search bounding rect given the center point of the initial search
+function initSearchBox(lat, long) {
+    
+    var segmentLength = Math.sqrt(RADIUS * RADIUS * 2),
+        latOffset     = ConversionHelper.metersToLat(segmentLength),
+        lngOffset     = ConversionHelper.metersToLong(segmentLength, lat);
+    
+    searchBounds.ne.lat = searchBounds.nw.lat = lat + latOffset;
+    searchBounds.ne.long = searchBounds.se.long = long - lngOffset;
+    searchBounds.nw.long = searchBounds.sw.long = long + lngOffset;
+    searchBounds.se.lat = searchBounds.sw.lat = lat - latOffset;
+    searchBounds.segmentLength = segmentLength;
+    searchBounds.size = 1;
+}
+
+
 // find the lat and long of the location
 function getLatLong(location) {
     
     if (location) {
         var address = 'address='+location.replace(' ','+'),
-           key     = '&key='+apikey,
-           url     = mapsUrl+address+key;
+            key     = '&key='+apikey,
+            url     = mapsUrl+address+key;
+        
+        var center;
     
         $.getJSON(url,function(resp){
             var data = resp.results;
-            
-            locationMeta = {
-                city: data[0].address_components[0],
-                
-            }
-            
+                        
             for (var i in data){
                 
                 // get the location meta data
@@ -97,10 +137,14 @@ function getLatLong(location) {
                     }
                 }
                 
-                initMap(data[i].geometry.location);
+                center = data[i].geometry.location;
             }
        });
-    }    
+        
+        return center;
+    }
+    
+    return null;
 }
 
 
@@ -113,20 +157,95 @@ function initMap(center) {
         	mapTypeId: 'roadmap',
         	clickableIcons: false
   	    });
-                
-        // types of venues to search for
-        var types=['restaurant','bar','cafe','night_club','casino','stadium','zoo','amusement_park'];
-	    
-	    for (var t in types){
- 	    	service = new google.maps.places.PlacesService(map);
-            // perform a seperate search for each type for maximum payload
-	    	service.nearbySearch({
-        		location: center,
-        		radius: RADIUS,
-        		type: types[t]
-  	    	}, callback);
-  	    }
     }
+}
+
+
+function expandSearch() {
+    if (searchBounds.segmentLength > 0) {
+        
+        // top row
+        var lngIncr = ConversionHelper.metersToLong(searchBounds.segmentLength, searchBounds.ne.lat);
+        var latIncr = ConversionHelper.metersToLat(searchBounds.segmentLength);
+        var centerLat = searchBounds.ne.lat + latIncr / 2,
+            centerLng = searchBounds.ne.long - lngIncr / 2;
+        
+        // set new bounds
+        searchBounds.ne.lat += latIncr;
+        searchBounds.ne.long -= lngIncr;
+        searchBounds.nw.lat += latIncr;
+        searchBounds.nw.long += lngIncr;
+        searchBounds.se.lat -= latIncr;
+        searchBounds.sw.lat -= latIncr;
+        
+        for (var i=0; i < searchBounds.size + 2; i++) {
+            performSearch({
+                lat: centerLat,
+                lng: centerLng
+            });
+            
+            // move east to west
+            centerLng += lngIncr;
+        }
+        
+        // left side
+        centerLat -= ConversionHelper.metersToLat(searchBounds.segmentLength);
+        
+        for (var i=0; i < searchBounds.size; i++) {
+            performSearch({
+                lat: centerLat,
+                lng: centerLng
+            });
+            
+            // move north to south
+            centerLat -= latIncr;
+        }
+        
+        // bottom row
+        centerLat -= latIncr;
+        lngIncr = ConversionHelper.metersToLong(searchBounds.size, centerLat);
+        
+        searchBounds.sw.long += lngIncr;
+        searchBounds.se.long -= lngIncr;
+        
+        for (var i=0; i < searchBounds.size + 2; i++) {
+            performSearch({
+                lat: centerLat,
+                lng: centerLng
+            });
+            
+            // move west to east
+            centerLng -= lngIncr;
+        }
+        
+        // right side
+        centerLat += latIncr;
+        
+        for (var i=0; i <searchBounds.size; i++) {
+            performSearch({
+                lat: centerLat,
+                lng: centerLng
+            });
+            
+            centerLat += latIncr;
+        }
+        
+        // increment the size
+        searchBounds.size += 2;
+    }
+}
+
+
+function performSearch(center) {
+    for (var t in VENUE_TYPES){
+ 		service = new google.maps.places.PlacesService(map);
+        // perform a seperate search for each type for maximum payload
+		service.nearbySearch({
+    		location: center,
+    		radius: RADIUS,
+    		type: VENUE_TYPES[t]
+  		}, callback);
+  	}
 }
 
 
@@ -140,14 +259,16 @@ function callback(results, status, pagination) {
 		
             // add to the venue dict
             venues[place.place_id] = {
-				name:place.name,
-      			location:place.geometry.location,
-		      	bounds:place.geometry.viewport,
-		      	types:place.types,
-                address: place.vicinity,
-                state: locationMeta.state,
-                city: locationMeta.city
+				name:     place.name,
+      			location: place.geometry.location,
+		      	bounds:   place.geometry.viewport,
+		      	types:    place.types,
+                address:  place.vicinity,
+                state:    locationMeta.state,
+                city:     locationMeta.city
 			};
+            
+            addMarker(place);
 		}
         
         if (pagination.hasNextPage) {
@@ -156,11 +277,6 @@ function callback(results, status, pagination) {
         }
         else {
             // no other pages
-            // add markers for each venue
-            for (var id in venues) {
-                addMarker(venues[id]);
-            }
-            
             searchDone();
         }
 	}
@@ -180,11 +296,29 @@ function searchDone() {
 function addMarker(place) {
   var marker = new google.maps.Marker({
     map: map,
-    position: place.location,
+    position: place.geometry.location,
   });
+    
+  markers.push(marker);
 
   google.maps.event.addListener(marker, 'click', function() {
     	infowindow.setContent(place.name+'('+JSON.stringify(place.types)+')');
     	infowindow.open(map, this);
 	});
+}
+
+
+// Resets the map and venue dictionary
+function clearVenues() {
+    clearMarkers();
+    venues = {};
+}
+
+// delete all map markers
+function clearMarkers() {
+    for (var i=0; i<markers.length; i++) {
+        markers[i].setMap(null);
+    }
+    
+    markers = [];
 }
