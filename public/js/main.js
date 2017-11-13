@@ -9,7 +9,7 @@ var apikey = 'AIzaSyAXF6z1NT5Dfci6kGmahPyxtsVsQFlOLnc',
 // constants
 var RADIUS = 1000;
  // types of venues to search for
-var VENUE_TYPES = ['restaurant','bar','cafe','night_club','casino','stadium','zoo','amusement_park'];
+var VENUE_TYPES = ['restaurant'];//,'bar','cafe','night_club','casino','stadium','zoo','amusement_park'];
 
 // Dom elements
 var lookupButton,
@@ -39,7 +39,7 @@ var ConversionHelper = {
         return meters / 111111;
     },
     metersToLong: function (meters, lat) {
-        return meters / (111111 * Math.cos(lat));
+        return meters / (111111 * Math.cos(lat * Math.PI / 180));
     }
 }
 
@@ -104,8 +104,8 @@ function initSearchBox(lat, long) {
         lngOffset     = ConversionHelper.metersToLong(segmentLength, lat);
     
     searchBounds.ne.lat = searchBounds.nw.lat = lat + latOffset;
-    searchBounds.ne.long = searchBounds.se.long = long - lngOffset;
-    searchBounds.nw.long = searchBounds.sw.long = long + lngOffset;
+    searchBounds.ne.long = searchBounds.se.long = long + lngOffset;
+    searchBounds.nw.long = searchBounds.sw.long = long - lngOffset;
     searchBounds.se.lat = searchBounds.sw.lat = lat - latOffset;
     searchBounds.segmentLength = segmentLength;
     searchBounds.size = 1;
@@ -173,68 +173,100 @@ function expandSearch() {
         // top row
         var lngIncr = ConversionHelper.metersToLong(searchBounds.segmentLength, searchBounds.ne.lat);
         var latIncr = ConversionHelper.metersToLat(searchBounds.segmentLength);
-        var centerLat = searchBounds.ne.lat + latIncr / 2,
-            centerLng = searchBounds.ne.long - lngIncr / 2;
+        var centerLat = searchBounds.ne.lat,// + latIncr / 2,
+            centerLng = searchBounds.ne.long;// - lngIncr / 2;
+        
+        var c = {
+            lat: searchBounds.ne.lat,
+            lng: searchBounds.ne.long
+        };
+        
+        addMarker(c);
         
         // set new bounds
         searchBounds.ne.lat += latIncr;
-        searchBounds.ne.long -= lngIncr;
+        searchBounds.ne.long += lngIncr;
         searchBounds.nw.lat += latIncr;
-        searchBounds.nw.long += lngIncr;
+        searchBounds.nw.long -= lngIncr;
         searchBounds.se.lat -= latIncr;
         searchBounds.sw.lat -= latIncr;
         
+        var searchLoop = null;
+        
         for (var i=0; i < searchBounds.size + 2; i++) {
-            performSearch({
-                lat: centerLat,
-                lng: centerLng
-            });
             
+            searchLoop = performSearch.bind(
+                this, 
+                {
+                    lat: centerLat,
+                    lng: centerLng
+                },
+                searchLoop
+            );
+                        
             // move east to west
-            centerLng += lngIncr;
+            centerLng -= lngIncr;
         }
+        centerLng += lngIncr;
         
         // left side
-        centerLat -= ConversionHelper.metersToLat(searchBounds.segmentLength);
+        centerLat -= latIncr;
         
         for (var i=0; i < searchBounds.size; i++) {
-            performSearch({
-                lat: centerLat,
-                lng: centerLng
-            });
+
+            searchLoop = performSearch.bind(
+                this, 
+                {
+                    lat: centerLat,
+                    lng: centerLng
+                },
+                searchLoop
+            );
             
             // move north to south
             centerLat -= latIncr;
         }
         
         // bottom row
-        centerLat -= latIncr;
-        lngIncr = ConversionHelper.metersToLong(searchBounds.size, centerLat);
+        lngIncr = ConversionHelper.metersToLong(searchBounds.segmentLength, centerLat);
         
-        searchBounds.sw.long += lngIncr;
-        searchBounds.se.long -= lngIncr;
+        searchBounds.sw.long -= lngIncr;
+        searchBounds.se.long += lngIncr;
         
         for (var i=0; i < searchBounds.size + 2; i++) {
-            performSearch({
-                lat: centerLat,
-                lng: centerLng
-            });
+
+            searchLoop = performSearch.bind(
+                this, 
+                {
+                    lat: centerLat,
+                    lng: centerLng
+                },
+                searchLoop
+            );
             
             // move west to east
-            centerLng -= lngIncr;
+            centerLng += lngIncr;
         }
+        centerLng -= lngIncr;
         
         // right side
         centerLat += latIncr;
         
         for (var i=0; i <searchBounds.size; i++) {
-            performSearch({
-                lat: centerLat,
-                lng: centerLng
-            });
+
+            searchLoop = performSearch.bind(
+                this, 
+                {
+                    lat: centerLat,
+                    lng: centerLng
+                },
+                searchLoop
+            );
             
             centerLat += latIncr;
         }
+        
+        searchLoop();
         
         // increment the size
         searchBounds.size += 2;
@@ -242,27 +274,42 @@ function expandSearch() {
 }
 
 
-function performSearch(center) {
-    for (var t in VENUE_TYPES){
- 		service = new google.maps.places.PlacesService(map);
-        // perform a seperate search for each type for maximum payload
-		service.nearbySearch({
-    		location: center,
-    		radius: RADIUS,
-    		type: VENUE_TYPES[t]
-  		}, callback);
-  	}
+function performSearch(center, searchLoop = null) {
+    service = new google.maps.places.PlacesService(map);
+    
+    for (var i=0; i<VENUE_TYPES.length; i++) {
+                        
+        function loop(next, vi) {
+            // perform a seperate search for each type for maximum payload
+		    service.nearbySearch({
+    	    	location: center,
+    	    	radius: RADIUS,
+    	    	type: VENUE_TYPES[vi]
+  		    }, callback);//next);
+        }
+        
+        // build up the search loop chain
+        searchLoop = loop.bind(this, callback.bind(this, searchLoop), i);        
+    }
+    
+    // start the search
+    if (searchLoop)
+        searchLoop();
 }
 
 
 // callback for results from places search
-function callback(results, status, pagination) {
+function callback(loop, results, status, pagination) {
 	
 	if (status === google.maps.places.PlacesServiceStatus.OK) {
 	
 		for (var i = 0; i < results.length; i++) {
-			var place=results[i];
-		
+			var place = results[i];
+            
+            if (!venues.hasOwnProperty(place.place_id)) {
+                addMarker(place.geometry.location);
+            }
+            
             // add to the venue dict
             venues[place.place_id] = {
 				name:     place.name,
@@ -272,9 +319,7 @@ function callback(results, status, pagination) {
                 address:  place.vicinity,
                 state:    locationMeta.state,
                 city:     locationMeta.city
-			};
-            
-            addMarker(place);
+			};            
 		}
         
         if (pagination.hasNextPage) {
@@ -283,9 +328,14 @@ function callback(results, status, pagination) {
         }
         else {
             // no other pages
-            searchDone();
+            //searchDone();
+            if (loop) loop();
+            else searchDone();
         }
-	}
+	} else {
+        if (loop) loop();
+        else searchDone();
+    }
 }
 
 
@@ -295,14 +345,16 @@ function searchDone() {
         submitButton.get(0).disabled = false;
     }
     lookupButton.get(0).disabled = false;
+    
+    console.log(Object.keys(venues).length);
 }
 
 
 // adds a marker for a venue object
-function addMarker(place) {
+function addMarker(location) {
   var marker = new google.maps.Marker({
     map: map,
-    position: place.geometry.location,
+    position: location,
   });
     
   markers.push(marker);
