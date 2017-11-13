@@ -7,9 +7,10 @@ var apikey = 'AIzaSyAXF6z1NT5Dfci6kGmahPyxtsVsQFlOLnc',
     markers = [];
 
 // constants
+// the lookup radius in meters
 var RADIUS = 1000;
  // types of venues to search for
-var VENUE_TYPES = ['restaurant'];//,'bar','cafe','night_club','casino','stadium','zoo','amusement_park'];
+var VENUE_TYPES = ['restaurant','bar','cafe','night_club','casino','stadium','zoo','amusement_park'];
 
 // Dom elements
 var lookupButton,
@@ -18,13 +19,13 @@ var lookupButton,
     expandButton,
     clearButton;
 
-// a dictionary of venue objects keyed by google 'place_id'
+// a dictionary of venue objects keyed by google's 'place_id'
 var venues = {};
 
 // holds info about the searched for location : state, city, country
 var locationMeta = {};
 
-// tracks the bounding corners of the most recent search so we can expand it
+// tracks the bounding corners of the most recent search to facilitate expansion
 var searchBounds = {
     nw: { lat: 0, long: 0},
     ne: { lat: 0, long: 0},
@@ -49,14 +50,14 @@ $(function() {
     lookupButton = $('#lookupButton'),
     lookupInput  = $('#lookupInput'),
     expandButton = $('#expandButton'),
-    clearButton = $('#clearButton'),
+    clearButton =  $('#clearButton'),
     submitButton = $('#submitButton');
     
     // attach handler for the lookup button
     lookupButton.click(function (e) {
-        venues = {}; // should accumulate searches instead?
-        submitButton.get(0).disabled = true;
-        lookupButton.get(0).disabled = true;
+        clearVenues();
+        //venues = {}; // should accumulate searches instead?
+        disableUI();
         getLatLong(lookupInput.val(), function(center) {
             initMap(center);
             performSearch(center);
@@ -66,16 +67,47 @@ $(function() {
     });
     
     expandButton.click(function(e) {
+        disableUI();
         expandSearch();
     });
     
     clearButton.click(function(e) {
         clearVenues();
+        expandButton.get(0).disabled = true;
+        clearButton.get(0).disabled = true;
+        submitButton.get(0).disabled = true;
     })
     
-    submitButton.click(function (e) {
-        // send data to server
-        var data = JSON.stringify(venues);
+    submitButton.click(submitToDatabaseHandler);
+    
+    infowindow = new google.maps.InfoWindow();
+});
+
+
+function submitToDatabaseHandler(e) {
+    disableUI();
+    
+    // send data to server
+    
+    // need to chunk the data
+    var keys = Object.keys(venues),
+        chunks = [],
+        chunkSize = 100;
+    
+    for (var i = 0; i < Math.ceil(keys.length / chunkSize); i++) {
+        for (var p = 0; p < chunkSize; p++) {
+            var key = keys[p + i * chunkSize];
+            if (key === undefined) break;
+            if (chunks[i] === undefined) chunks[i] = {};
+            chunks[i][key] = venues[key];
+        }
+    }
+    
+    var resultsAccum = { successes: [], failures: [] };
+    
+    for (var i in chunks) {
+        
+        var data = JSON.stringify(chunks[i]);
         
         $.ajax({
             dataType:    "json",
@@ -83,17 +115,27 @@ $(function() {
             type:        "PUT",
             url:         '/',
             data:        data,
-            success:     success
+            success:     callback
         });
-        
-        function success(result) {
-            $('#outputModalContent').text(JSON.stringify(result));
-            $('#outputModal').modal();
-        }
-    });
+    }
     
-    infowindow = new google.maps.InfoWindow();
-});
+    var chunkIndex = 0;
+    function callback(result) {
+        resultsAccum.successes = resultsAccum.successes.concat(result.successes);
+        resultsAccum.failures = resultsAccum.failures.concat(result.failures);
+        
+        chunkIndex++;
+        
+        if (chunkIndex === chunks.length) success();
+    }
+    
+    function success() {
+        $('#resultSummary').text('Succeeded: ' + resultsAccum.successes.length + ', Failed: ' + resultsAccum.failures.length);
+        $('#resultDump').text(JSON.stringify(resultsAccum));
+        $('#outputModal').modal();
+        searchDone();
+    }
+}
 
 
 // set the search bounding rect given the center point of the initial search
@@ -103,12 +145,12 @@ function initSearchBox(lat, long) {
         latOffset     = ConversionHelper.metersToLat(segmentLength),
         lngOffset     = ConversionHelper.metersToLong(segmentLength, lat);
     
-    searchBounds.ne.lat = searchBounds.nw.lat = lat + latOffset;
-    searchBounds.ne.long = searchBounds.se.long = long + lngOffset;
-    searchBounds.nw.long = searchBounds.sw.long = long - lngOffset;
-    searchBounds.se.lat = searchBounds.sw.lat = lat - latOffset;
+    searchBounds.ne.lat        = searchBounds.nw.lat = lat + latOffset;
+    searchBounds.ne.long       = searchBounds.se.long = long + lngOffset;
+    searchBounds.nw.long       = searchBounds.sw.long = long - lngOffset;
+    searchBounds.se.lat        = searchBounds.sw.lat = lat - latOffset;
     searchBounds.segmentLength = segmentLength;
-    searchBounds.size = 1;
+    searchBounds.size          = 1;
 }
 
 
@@ -122,13 +164,13 @@ function getLatLong(location, callBack) {
         
         var center;
     
-        $.getJSON(url,function(resp){
+        $.getJSON(url, function(resp) {
             var data = resp.results;
                         
-            for (var i in data){
+            //for (var i in data){
                 
                 // get the location meta data
-                var ac = data[i].address_components;
+                var ac = data[0].address_components;
                 for (var p=0; p<ac.length; p++) {
                     if (ac[p].types) {
                         switch (ac[p].types[0]) {
@@ -145,9 +187,9 @@ function getLatLong(location, callBack) {
                     }
                 }
                 
-                center = data[i].geometry.location;
+                center = data[0].geometry.location;
                 callBack(center);
-            }
+            //}
         });
     }
 }
@@ -158,11 +200,13 @@ function initMap(center) {
     if (center) {
         
         map = new google.maps.Map(document.getElementById('map'), {
-        	zoom: 14,
-        	center: center,
-        	mapTypeId: 'roadmap',
+        	zoom:           14,
+        	center:         center,
+        	mapTypeId:      'roadmap',
         	clickableIcons: false
   	    });
+        
+        service = new google.maps.places.PlacesService(map);
     }
 }
 
@@ -171,8 +215,8 @@ function expandSearch() {
     if (searchBounds.segmentLength > 0) {
         
         // top row
-        var lngIncr = ConversionHelper.metersToLong(searchBounds.segmentLength, searchBounds.ne.lat);
-        var latIncr = ConversionHelper.metersToLat(searchBounds.segmentLength);
+        var lngIncr   = ConversionHelper.metersToLong(searchBounds.segmentLength, searchBounds.ne.lat);
+        var latIncr   = ConversionHelper.metersToLat(searchBounds.segmentLength);
         var centerLat = searchBounds.ne.lat,// + latIncr / 2,
             centerLng = searchBounds.ne.long;// - lngIncr / 2;
         
@@ -180,9 +224,7 @@ function expandSearch() {
             lat: searchBounds.ne.lat,
             lng: searchBounds.ne.long
         };
-        
-        addMarker(c);
-        
+                
         // set new bounds
         searchBounds.ne.lat += latIncr;
         searchBounds.ne.long += lngIncr;
@@ -191,17 +233,17 @@ function expandSearch() {
         searchBounds.se.lat -= latIncr;
         searchBounds.sw.lat -= latIncr;
         
-        var searchLoop = null;
+        var searchChain = null;
         
         for (var i=0; i < searchBounds.size + 2; i++) {
             
-            searchLoop = performSearch.bind(
+            searchChain = performSearch.bind(
                 this, 
                 {
                     lat: centerLat,
                     lng: centerLng
                 },
-                searchLoop
+                searchChain
             );
                         
             // move east to west
@@ -214,13 +256,13 @@ function expandSearch() {
         
         for (var i=0; i < searchBounds.size; i++) {
 
-            searchLoop = performSearch.bind(
+            searchChain = performSearch.bind(
                 this, 
                 {
                     lat: centerLat,
                     lng: centerLng
                 },
-                searchLoop
+                searchChain
             );
             
             // move north to south
@@ -235,13 +277,13 @@ function expandSearch() {
         
         for (var i=0; i < searchBounds.size + 2; i++) {
 
-            searchLoop = performSearch.bind(
+            searchChain = performSearch.bind(
                 this, 
                 {
                     lat: centerLat,
                     lng: centerLng
                 },
-                searchLoop
+                searchChain
             );
             
             // move west to east
@@ -254,19 +296,20 @@ function expandSearch() {
         
         for (var i=0; i <searchBounds.size; i++) {
 
-            searchLoop = performSearch.bind(
+            searchChain = performSearch.bind(
                 this, 
                 {
                     lat: centerLat,
                     lng: centerLng
                 },
-                searchLoop
+                searchChain
             );
             
             centerLat += latIncr;
         }
         
-        searchLoop();
+        // start search
+        searchChain();
         
         // increment the size
         searchBounds.size += 2;
@@ -274,32 +317,29 @@ function expandSearch() {
 }
 
 
-function performSearch(center, searchLoop = null) {
-    service = new google.maps.places.PlacesService(map);
+function performSearch(center, searchChain = null) {
+    
+    function search(next, vi) {
+        // perform a seperate search for each type for maximum payload
+	    service.nearbySearch({
+        	location: center,
+        	radius: RADIUS,
+        	type: VENUE_TYPES[vi]
+  	    }, next);
+    }
     
     for (var i=0; i<VENUE_TYPES.length; i++) {
-                        
-        function loop(next, vi) {
-            // perform a seperate search for each type for maximum payload
-		    service.nearbySearch({
-    	    	location: center,
-    	    	radius: RADIUS,
-    	    	type: VENUE_TYPES[vi]
-  		    }, callback);//next);
-        }
-        
-        // build up the search loop chain
-        searchLoop = loop.bind(this, callback.bind(this, searchLoop), i);        
+        // build up the search chain
+        searchChain = search.bind(this, callback.bind(this, searchChain), i);        
     }
     
     // start the search
-    if (searchLoop)
-        searchLoop();
+    if (searchChain) searchChain();
 }
 
 
 // callback for results from places search
-function callback(loop, results, status, pagination) {
+function callback(nextSearch, results, status, pagination) {
 	
 	if (status === google.maps.places.PlacesServiceStatus.OK) {
 	
@@ -307,7 +347,7 @@ function callback(loop, results, status, pagination) {
 			var place = results[i];
             
             if (!venues.hasOwnProperty(place.place_id)) {
-                addMarker(place.geometry.location);
+                addMarker(place);
             }
             
             // add to the venue dict
@@ -329,11 +369,11 @@ function callback(loop, results, status, pagination) {
         else {
             // no other pages
             //searchDone();
-            if (loop) loop();
+            if (nextSearch) nextSearch();
             else searchDone();
         }
 	} else {
-        if (loop) loop();
+        if (nextSearch) nextSearch();
         else searchDone();
     }
 }
@@ -343,18 +383,29 @@ function callback(loop, results, status, pagination) {
 function searchDone() {
     if (Object.keys(venues).length) {
         submitButton.get(0).disabled = false;
+        expandButton.get(0).disabled = false;
+        clearButton.get(0).disabled = false;
     }
     lookupButton.get(0).disabled = false;
     
-    console.log(Object.keys(venues).length);
+    console.log("number of venues: " + Object.keys(venues).length);
 }
 
 
-// adds a marker for a venue object
-function addMarker(location) {
+// disables the ui elements while searching occurs
+function disableUI() {
+    submitButton.get(0).disabled = true;
+    lookupButton.get(0).disabled = true;
+    expandButton.get(0).disabled = true;
+    clearButton.get(0).disabled = true;
+}
+
+
+// adds a marker at given place
+function addMarker(place) {
   var marker = new google.maps.Marker({
     map: map,
-    position: location,
+    position: place.geometry.location,
   });
     
   markers.push(marker);
@@ -366,7 +417,7 @@ function addMarker(location) {
 }
 
 
-// Resets the map and venue dictionary
+// Resets the mapmarkers and the venue dictionary
 function clearVenues() {
     clearMarkers();
     venues = {};

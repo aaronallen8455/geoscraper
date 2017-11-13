@@ -14,12 +14,12 @@ html
               h3.text-center WutzGood - GeoScraper
               // query the google api
               input#lookupInput.form-control(type='text' placeholder='Enter a Location...')
-              br
+              br/
               div.row
                 button#lookupButton.btn.btn-default.col-sm-4 Lookup
-                button#expandButton.btn.btn-warning.col-sm-4 Expand
-                button#clearButton.btn.btn-danger.col-sm-4 Clear
-              br
+                button#expandButton.btn.btn-warning.col-sm-4(disabled) Expand
+                button#clearButton.btn.btn-danger.col-sm-4(disabled) Clear
+              br/
               // send to DB
               button#submitButton.btn.btn-primary.btn-block(disabled) Submit to Database
       
@@ -30,7 +30,12 @@ html
       div.modal-content
         div.modal-header
           h4.modal-title Results
-        div#outputModalContent.modal-body
+        div.modal-body
+          div#resultSummary
+          button.btn.btn-default.pull-right(data-toggle='collapse' href='#resultDump' aria-expanded='false' aria-controls='resultDump')
+            span.glyphicon.glyphicon-triangle-bottom
+          br/
+          div#resultDump.collapse
         div.modal-footer
           button.btn.btn-default(type='button' data-dismiss='modal') Close
             

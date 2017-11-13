@@ -77,7 +77,7 @@ app.put('/', async (req, res) => {
                 "BEGIN;" +
                 "INSERT INTO place_ids(place_id) VALUES('"+placeId+"');" +
                 "INSERT INTO venues(name, address, state, gps) VALUES("+params.join(',')+");" +
-                "COMMIT;"
+                "COMMIT;";
             
             try {
                 // run the query
