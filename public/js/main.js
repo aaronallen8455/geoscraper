@@ -22,8 +22,13 @@ var lookupButton,
 // a dictionary of venue objects keyed by google's 'place_id'
 var venues = {};
 
-// holds info about the searched for location : state, city, country
-var locationMeta = {};
+// holds info about the searched for location
+var locationMeta = {
+    country: '',
+    state: '',
+    city: '',
+    postalCode: ''
+};
 
 // tracks the bounding corners of the most recent search to facilitate expansion
 var searchBounds = {
@@ -59,10 +64,12 @@ $(function() {
         //venues = {}; // should accumulate searches instead?
         disableUI();
         getLatLong(lookupInput.val(), function(center) {
-            initMap(center);
-            performSearch(center);
-            // init the search bounding box
-            initSearchBox(center.lat, center.lng);
+            getMeta(center, function() {
+                initMap(center);
+                performSearch(center);
+                // init the search bounding box
+                initSearchBox(center.lat, center.lng);
+            });
         });
     });
     
@@ -158,40 +165,55 @@ function initSearchBox(lat, long) {
 function getLatLong(location, callBack) {
     
     if (location) {
-        var address = 'address='+location.replace(' ','+'),
-            key     = '&key='+apikey,
-            url     = mapsUrl+address+key;
+        var address = 'address=' + location.replace(' ', '+'),
+            key     = '&key=' + apikey,
+            url     = mapsUrl + address + key;
         
         var center;
     
         $.getJSON(url, function(resp) {
             var data = resp.results;
-                        
-            //for (var i in data){
-                
-                // get the location meta data
-                var ac = data[0].address_components;
-                for (var p=0; p<ac.length; p++) {
-                    if (ac[p].types) {
-                        switch (ac[p].types[0]) {
-                            case 'locality':
-                                locationMeta.city = ac[p].long_name;
-                                break;
-                            case 'administrative_area_level_1':
-                                locationMeta.state = ac[p].long_name;
-                                break;
-                            case 'country':
-                                locationMeta.country = ac[p].long_name;
-                                break;
-                        }
-                    }
-                }
-                
-                center = data[0].geometry.location;
-                callBack(center);
-            //}
+            console.log(data);
+            center = data[0].geometry.location;
+            
+            callBack(center);
         });
     }
+}
+
+
+// gets location info for a geocode
+function getMeta(loc, callback) {
+    var url = mapsUrl +
+              'latlng=' +loc.lat + ',' + loc.lng +
+              "&key=" + apikey;
+    
+    $.getJSON(url, function(resp) {
+        var data = resp.results;
+        var ac = data[0].address_components;
+        
+        // assign the meta data
+        for (var i in ac) {
+            if (ac[i].types) {
+                switch (ac[i].types[0]) {
+                    case 'postal_code':
+                        locationMeta.postalCode = ac[i].long_name;
+                        break;
+                    case 'country':
+                        locationMeta.country = ac[i].long_name;
+                        break;
+                    case 'locality':
+                        locationMeta.city = ac[i].long_name;
+                        break;
+                    case 'administrative_area_level_1':
+                        locationMeta.state = ac[i].long_name;
+                        break;
+                }
+            }
+        }
+        
+        if (callback) callback();
+    });
 }
 
 
@@ -206,7 +228,7 @@ function initMap(center) {
         	clickableIcons: false
   	    });
         
-        service = new google.maps.places.PlacesService(map);
+        
     }
 }
 
@@ -220,10 +242,6 @@ function expandSearch() {
         var centerLat = searchBounds.ne.lat,// + latIncr / 2,
             centerLng = searchBounds.ne.long;// - lngIncr / 2;
         
-        var c = {
-            lat: searchBounds.ne.lat,
-            lng: searchBounds.ne.long
-        };
                 
         // set new bounds
         searchBounds.ne.lat += latIncr;
@@ -237,13 +255,19 @@ function expandSearch() {
         
         for (var i=0; i < searchBounds.size + 2; i++) {
             
-            searchChain = performSearch.bind(
-                this, 
-                {
-                    lat: centerLat,
-                    lng: centerLng
-                },
-                searchChain
+            var c = {
+                lat: centerLat,
+                lng: centerLng
+            };
+            
+            searchChain = getMeta.bind(
+                this,
+                c,
+                performSearch.bind(
+                    this,
+                    c,
+                    searchChain
+                )
             );
                         
             // move east to west
@@ -256,13 +280,19 @@ function expandSearch() {
         
         for (var i=0; i < searchBounds.size; i++) {
 
-            searchChain = performSearch.bind(
-                this, 
-                {
-                    lat: centerLat,
-                    lng: centerLng
-                },
-                searchChain
+            var c = {
+                lat: centerLat,
+                lng: centerLng
+            };
+            
+            searchChain = getMeta.bind(
+                this,
+                c,
+                performSearch.bind(
+                    this,
+                    c,
+                    searchChain
+                )
             );
             
             // move north to south
@@ -277,13 +307,19 @@ function expandSearch() {
         
         for (var i=0; i < searchBounds.size + 2; i++) {
 
-            searchChain = performSearch.bind(
-                this, 
-                {
-                    lat: centerLat,
-                    lng: centerLng
-                },
-                searchChain
+            var c = {
+                lat: centerLat,
+                lng: centerLng
+            };
+            
+            searchChain = getMeta.bind(
+                this,
+                c,
+                performSearch.bind(
+                    this,
+                    c,
+                    searchChain
+                )
             );
             
             // move west to east
@@ -296,13 +332,19 @@ function expandSearch() {
         
         for (var i=0; i <searchBounds.size; i++) {
 
-            searchChain = performSearch.bind(
-                this, 
-                {
-                    lat: centerLat,
-                    lng: centerLng
-                },
-                searchChain
+            var c = {
+                lat: centerLat,
+                lng: centerLng
+            };
+            
+            searchChain = getMeta.bind(
+                this,
+                c,
+                performSearch.bind(
+                    this,
+                    c,
+                    searchChain
+                )
             );
             
             centerLat += latIncr;
@@ -316,8 +358,9 @@ function expandSearch() {
     }
 }
 
-
+// find the venues at a given location
 function performSearch(center, searchChain = null) {
+    service = new google.maps.places.PlacesService(map);
     
     function search(next, vi) {
         // perform a seperate search for each type for maximum payload
@@ -352,13 +395,14 @@ function callback(nextSearch, results, status, pagination) {
             
             // add to the venue dict
             venues[place.place_id] = {
-				name:     place.name,
-      			location: place.geometry.location,
-		      	bounds:   place.geometry.viewport,
-		      	types:    place.types,
-                address:  place.vicinity,
-                state:    locationMeta.state,
-                city:     locationMeta.city
+				name:       place.name,
+      			location:   place.geometry.location,
+		      	bounds:     place.geometry.viewport,
+		      	types:      place.types,
+                postalCode: locationMeta.postalCode,
+                address:    place.vicinity,
+                state:      locationMeta.state,
+                city:       locationMeta.city
 			};            
 		}
         
@@ -368,7 +412,6 @@ function callback(nextSearch, results, status, pagination) {
         }
         else {
             // no other pages
-            //searchDone();
             if (nextSearch) nextSearch();
             else searchDone();
         }
@@ -389,6 +432,7 @@ function searchDone() {
     lookupButton.get(0).disabled = false;
     
     console.log("number of venues: " + Object.keys(venues).length);
+    console.log(venues);
 }
 
 

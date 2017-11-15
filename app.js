@@ -66,17 +66,28 @@ app.put('/', async (req, res) => {
             ];
             
             var boundingBox = [
-                venue.bounds.west + ' ' + venue.bounds.north,
-                venue.bounds.east + ' ' + venue.bounds.north,
-                venue.bounds.east + ' ' + venue.bounds.south,
-                venue.bounds.west + ' ' + venue.bounds.south,
-                venue.bounds.west + ' ' + venue.bounds.north
+                venue.bounds.west + ' ' + venue.bounds.north + " 0",
+                venue.bounds.east + ' ' + venue.bounds.north + " 0",
+                venue.bounds.east + ' ' + venue.bounds.south + " 0",
+                venue.bounds.west + ' ' + venue.bounds.south + " 0",
+                venue.bounds.west + ' ' + venue.bounds.north + " 0"
             ];
+            
+            var geofenceParams = [
+                params[0],
+                1,
+                "ST_GeomFromText('POLYGON((" + boundingBox.join(',') + "))',4326)"
+            ]
+            
+            // need to insert the geofence into geofence table and get it's GUID back
+            // then find the other geofences that this location falls in
+            // then add all these fence's ids as an array into the fk_fence venue column - or just the one geofence for now...
             
             var query = 
                 "BEGIN;" +
                 "INSERT INTO place_ids(place_id) VALUES('"+placeId+"');" +
-                "INSERT INTO venues(name, address, state, gps) VALUES("+params.join(',')+");" +
+                "WITH fence_id as (INSERT INTO geofences (name, type, polygon) VALUES("+geofenceParams.join(',')+") RETURNING guid as fid)" +
+                "INSERT INTO venues(name, address, state, gps, fk_geofences) VALUES("+params.join(',')+", ARRAY(SELECT fid FROM fence_id));" +
                 "COMMIT;";
             
             try {
